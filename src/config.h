@@ -110,8 +110,8 @@
 #define MENU_HEIGHT            25
 // Top-level menu items: About, Vibrate Motor, Accelerometer, Setup WiFi, Settings
 #define MENU_LENGTH            5
-// Settings submenu items: Set Time, Sync NTP, Night Mode
-#define SETTINGS_MENU_LENGTH   3
+// Settings submenu items: Set Time, Sync NTP, Night Mode, Hourly Buzz
+#define SETTINGS_MENU_LENGTH   4
 // Night-mode edit fields
 #define NIGHT_FIELD_INTERVAL   0
 #define NIGHT_FIELD_START      1

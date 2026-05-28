@@ -76,18 +76,19 @@ main menu when they finish (their final `showMenu(menuIndex, false)` call).
 
 ## Settings submenu
 
-Three entries:
+Four entries:
 
 | # | Item | Function | What it does |
 |---|---|---|---|
-| 0 | Set Time   | `setTime`           | Manual time entry with the blink-edit pattern (Hour → Minute → Year → Month → Day) |
-| 1 | Sync NTP   | `showSyncNTP`       | Connects to WiFi, runs one NTP `forceUpdate()`, writes the result to the RTC |
-| 2 | Night Mode | `showSetNightMode`  | Opens the [Night Mode editor](#night-mode-editor) |
+| 0 | Set Time              | `setTime`           | Manual time entry with the blink-edit pattern (Hour → Minute → Year → Month → Day) |
+| 1 | Sync NTP              | `showSyncNTP`       | Connects to WiFi, runs one NTP `forceUpdate()`, writes the result to the RTC |
+| 2 | Night Mode            | `showSetNightMode`  | Opens the [Night Mode editor](#night-mode-editor) |
+| 3 | Hourly Buzz: ON / OFF | `toggleHourlyBuzz`  | Inline toggle — flips `vibrateOClock`, persists to NVS, re-renders the menu in place. See [Hourly Buzz toggle](#hourly-buzz-toggle). |
 
-All three return to the settings submenu via `_returnToPreviousMenu()` —
+Entries 0–2 return to the settings submenu via `_returnToPreviousMenu()` —
 which consults `parentMenuState` (set to `SETTINGS_MENU_STATE` by the
 dispatch site before the call) and picks `showSettings(...)` over
-`showMenu(...)`.
+`showMenu(...)`. Entry 3 doesn't leave the menu at all.
 
 ## Night Mode editor
 
@@ -112,6 +113,23 @@ the watch before pressing MENU on the last field.
 setting in `settings.h`) fires at minute=0 regardless of night-mode state,
 because minute=0 is always a refresh minute for any interval that divides
 60. Set `vibrateOClock = false` in `settings.h` for a silent night.
+
+## Hourly Buzz toggle
+
+A one-bit inline toggle for `settings.vibrateOClock`. Selecting it from the
+settings submenu does **not** open a new screen — instead `toggleHourlyBuzz`:
+
+1. Flips `settings.vibrateOClock`.
+2. Writes the new value to NVS (`vibrateClk` key).
+3. Buzzes the motor briefly (75 ms × 2) when transitioning to ON, so the
+   user gets the same haptic they'd hear on the next hour mark. No buzz
+   when transitioning to OFF.
+4. Calls `showSettings(settingsMenuIndex, true)` to redraw the menu with
+   the updated label (`Hourly Buzz: ON` ↔ `Hourly Buzz: OFF`).
+
+The label is composed at render time in `showSettings` / `showFastSettings`
+from `settings.vibrateOClock`, so the user sees the new state immediately
+after the partial refresh completes.
 
 ## Set Time editor
 
@@ -151,7 +169,7 @@ Three layers, fastest to slowest:
 | Layer | Survives | Used for |
 |---|---|---|
 | `RTC_DATA_ATTR` | deep-sleep wakes (lost on power-off / hard reset) | `menuIndex`, `settingsMenuIndex`, `parentMenuState`, `guiState`, `currentWeather`, `lastSSID`, `lastIPAddress` |
-| NVS (Preferences) | deep-sleep **and** power-off | edited `nightModeMinutes` / `nightModeStart` / `nightModeEnd` (under namespace `"watchy"`) |
+| NVS (Preferences) | deep-sleep **and** power-off | edited `nightModeMinutes` / `nightModeStart` / `nightModeEnd` / `vibrateOClock` (under namespace `"watchy"`, keys `nightMin` / `nightStart` / `nightEnd` / `vibrateClk`) |
 | Compile-time `#define` in `settings.h` | flashed firmware | initial defaults for all three night-mode values when the NVS namespace doesn't exist yet |
 
 On boot, `_loadPersistedSettings()` runs right after `RTC.init()` and

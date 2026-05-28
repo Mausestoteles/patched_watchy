@@ -99,6 +99,7 @@ public:
   void showSettings(byte settingsIndex, bool partialRefresh);
   void showFastSettings(byte settingsIndex);
   void showSetNightMode();
+  void toggleHourlyBuzz();
   void showAbout();
   void showBuzz();
   void showAccelerometer();

@@ -301,13 +301,16 @@ static inline void _dispatchMainMenu(Watchy *w, int idx) {
 
 // Dispatch a selection from the settings submenu. Each leaf returns to the
 // settings submenu via _returnToPreviousMenu() because parentMenuState is
-// set to SETTINGS_MENU_STATE before the call.
+// set to SETTINGS_MENU_STATE before the call. The Hourly-Buzz toggle is a
+// special case: it flips a bool inline and re-renders the settings menu
+// without spawning a separate editor screen.
 static inline void _dispatchSettingsMenu(Watchy *w, int idx) {
   parentMenuState = SETTINGS_MENU_STATE;
   switch (idx) {
   case 0: w->setTime();          break;
   case 1: w->showSyncNTP();      break;
   case 2: w->showSetNightMode(); break;
+  case 3: w->toggleHourlyBuzz(); break;
   default: break;
   }
 }
@@ -1413,6 +1416,9 @@ void Watchy::_loadPersistedSettings() {
   if (prefs.isKey("nightEnd")) {
     settings.nightModeEnd = prefs.getUChar("nightEnd", settings.nightModeEnd);
   }
+  if (prefs.isKey("vibrateClk")) {
+    settings.vibrateOClock = prefs.getBool("vibrateClk", settings.vibrateOClock);
+  }
   prefs.end();
 }
 
@@ -1424,6 +1430,7 @@ void Watchy::_savePersistedSettings() {
   prefs.putUChar("nightMin",   settings.nightModeMinutes);
   prefs.putUChar("nightStart", settings.nightModeStart);
   prefs.putUChar("nightEnd",   settings.nightModeEnd);
+  prefs.putBool("vibrateClk",  settings.vibrateOClock);
   prefs.end();
 }
 
@@ -1436,7 +1443,12 @@ void Watchy::showSettings(byte settingsIndex, bool partialRefresh) {
   uint16_t w, h;
   int16_t yPos;
 
-  const char *items[] = {"Set Time", "Sync NTP", "Night Mode"};
+  // Hourly-Buzz label reflects the current setting so the user sees the
+  // post-toggle state immediately when the menu re-renders.
+  char buzzLabel[24];
+  snprintf(buzzLabel, sizeof(buzzLabel), "Hourly Buzz: %s",
+           settings.vibrateOClock ? "ON" : "OFF");
+  const char *items[] = {"Set Time", "Sync NTP", "Night Mode", buzzLabel};
   for (int i = 0; i < SETTINGS_MENU_LENGTH; i++) {
     yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
     display.setCursor(0, yPos);
@@ -1466,7 +1478,12 @@ void Watchy::showFastSettings(byte settingsIndex) {
   uint16_t w, h;
   int16_t yPos;
 
-  const char *items[] = {"Set Time", "Sync NTP", "Night Mode"};
+  // Hourly-Buzz label reflects the current setting so the user sees the
+  // post-toggle state immediately when the menu re-renders.
+  char buzzLabel[24];
+  snprintf(buzzLabel, sizeof(buzzLabel), "Hourly Buzz: %s",
+           settings.vibrateOClock ? "ON" : "OFF");
+  const char *items[] = {"Set Time", "Sync NTP", "Night Mode", buzzLabel};
   for (int i = 0; i < SETTINGS_MENU_LENGTH; i++) {
     yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
     display.setCursor(0, yPos);
@@ -1609,4 +1626,18 @@ void Watchy::showSetNightMode() {
   _savePersistedSettings();
 
   _returnToPreviousMenu();
+}
+
+// Inline toggle for the hourly-buzz setting. Flips, persists, re-renders the
+// settings menu in place — no dedicated editor screen since there's only one
+// bit of state to display.
+void Watchy::toggleHourlyBuzz() {
+  settings.vibrateOClock = !settings.vibrateOClock;
+  _savePersistedSettings();
+  // Quick haptic confirmation when turning the chime ON so the user gets
+  // the same feedback they'd hear on the next hour mark.
+  if (settings.vibrateOClock) {
+    vibMotor(75, 2);
+  }
+  showSettings(settingsMenuIndex, true); // partial refresh to update label
 }

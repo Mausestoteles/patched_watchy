@@ -10,12 +10,17 @@ tree and example watchfaces.
 
 The most recent additions on top of the security, privacy and UX patches:
 
-- **Settings submenu on the watch.** "Set Time", "Sync NTP" and a new
-  "Night Mode" editor live under a single *Settings* entry in the main
-  menu — the top level is now About / Vibrate Motor / Show Accelerometer /
-  Setup WiFi / Settings. The submenu auto-closes back to the watchface
-  after two minutes of inactivity just like the main menu.
-  Full layout in [MENU.md](MENU.md).
+- **Settings submenu on the watch.** "Set Time", "Sync NTP", a new
+  "Night Mode" editor and an inline "Hourly Buzz" toggle live under a
+  single *Settings* entry in the main menu — the top level is now About /
+  Vibrate Motor / Show Accelerometer / Setup WiFi / Settings. The submenu
+  auto-closes back to the watchface after two minutes of inactivity just
+  like the main menu. Full layout in [MENU.md](MENU.md).
+- **Hourly Buzz toggle on the watch.** *Settings → Hourly Buzz: ON/OFF*
+  flips `vibrateOClock` in place — one MENU press toggles the state and
+  saves to NVS without leaving the settings list. A short two-pulse
+  vibration confirms when you switch it on. No more recompile to silence
+  the top-of-hour chime.
 - **Night Mode editor on the watch.** *Settings → Night Mode* opens an
   edit screen with three fields (Interval / Start / End). MENU advances,
   BACK retreats, UP/DOWN change the value. Interval `0` disables the
@@ -105,8 +110,8 @@ Full details for each item are in [What's patched](#whats-patched) below.
     wraps over midnight when `START > END`.
   - Hourly chime (`vibrateOClock`) still triggers at the top of the hour
     because minute=0 is always a refresh minute for any interval that
-    divides 60. Set `vibrateOClock = false` if you also want a silent
-    night.
+    divides 60. Toggle it via *Settings → Hourly Buzz* on the watch
+    itself if you want a silent night — no recompile needed.
   - Edit the active values from the watch via *Settings → Night Mode*
     (changes persist to NVS) — see [MENU.md §Night Mode editor](MENU.md#night-mode-editor).
 
@@ -158,8 +163,9 @@ templates only carry placeholders.
 ### Menu structure
 
 The main menu is About / Vibrate Motor / Show Accelerometer / Setup WiFi /
-Settings, with a 3-entry Settings submenu (Set Time / Sync NTP / Night
-Mode). UP/DOWN scrolls, MENU selects, BACK goes one level back.
+Settings, with a 4-entry Settings submenu (Set Time / Sync NTP / Night
+Mode / Hourly Buzz). UP/DOWN scrolls, MENU selects, BACK goes one level
+back.
 
 → Full state machine, button semantics, persistence model, and a
   "how to add your own menu entry" guide live in **[MENU.md](MENU.md)**.
