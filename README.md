@@ -15,12 +15,14 @@ The most recent additions on top of the security, privacy and UX patches:
   menu — the top level is now About / Vibrate Motor / Show Accelerometer /
   Setup WiFi / Settings. The submenu auto-closes back to the watchface
   after two minutes of inactivity just like the main menu.
+  Full layout in [MENU.md](MENU.md).
 - **Night Mode editor on the watch.** *Settings → Night Mode* opens an
   edit screen with three fields (Interval / Start / End). MENU advances,
   BACK retreats, UP/DOWN change the value. Interval `0` disables the
   feature. Changes persist to NVS (ESP32 flash) so they survive both deep
   sleep and full power-off — the compile defaults in `settings.h` only
   apply until you make your first edit.
+  See [MENU.md §Night Mode editor](MENU.md#night-mode-editor).
 - **Configurable night mode.** Default 22:00 → 05:00 the watchface ticks
   every 5 minutes instead of every minute. Configurable per-watchface in
   `settings.h` (`NIGHT_MODE_MINUTES` / `NIGHT_MODE_START` / `NIGHT_MODE_END`),
@@ -105,6 +107,8 @@ Full details for each item are in [What's patched](#whats-patched) below.
     because minute=0 is always a refresh minute for any interval that
     divides 60. Set `vibrateOClock = false` if you also want a silent
     night.
+  - Edit the active values from the watch via *Settings → Night Mode*
+    (changes persist to NVS) — see [MENU.md §Night Mode editor](MENU.md#night-mode-editor).
 
 ### UX
 
@@ -153,29 +157,12 @@ templates only carry placeholders.
 
 ### Menu structure
 
-The main menu has 5 entries — scroll with UP/DOWN, select with MENU,
-exit to the watchface with BACK.
+The main menu is About / Vibrate Motor / Show Accelerometer / Setup WiFi /
+Settings, with a 3-entry Settings submenu (Set Time / Sync NTP / Night
+Mode). UP/DOWN scrolls, MENU selects, BACK goes one level back.
 
-```
-About Watchy        — board info and battery voltage
-Vibrate Motor       — buzz test
-Show Accelerometer  — live X/Y/Z + step counter
-Setup WiFi          — opens the WPA2 setup AP (see "First-time WiFi setup")
-Settings            — opens the settings submenu
-```
-
-The Settings submenu contains:
-
-```
-Set Time            — manual time entry, blink-edit pattern
-Sync NTP            — one-shot NTP refresh over the current WiFi
-Night Mode          — edit the quiet-hours interval and window
-```
-
-In the *Night Mode* editor, MENU moves to the next field (Interval →
-Start → End → save & exit), BACK moves to the previous field, UP/DOWN
-adjust the currently blinking value. Settings are written to NVS as soon
-as you exit the editor.
+→ Full state machine, button semantics, persistence model, and a
+  "how to add your own menu entry" guide live in **[MENU.md](MENU.md)**.
 
 ### First-time WiFi setup
 
