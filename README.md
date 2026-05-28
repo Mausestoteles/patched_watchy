@@ -10,6 +10,17 @@ tree and example watchfaces.
 
 The most recent additions on top of the security, privacy and UX patches:
 
+- **Settings submenu on the watch.** "Set Time", "Sync NTP" and a new
+  "Night Mode" editor live under a single *Settings* entry in the main
+  menu — the top level is now About / Vibrate Motor / Show Accelerometer /
+  Setup WiFi / Settings. The submenu auto-closes back to the watchface
+  after two minutes of inactivity just like the main menu.
+- **Night Mode editor on the watch.** *Settings → Night Mode* opens an
+  edit screen with three fields (Interval / Start / End). MENU advances,
+  BACK retreats, UP/DOWN change the value. Interval `0` disables the
+  feature. Changes persist to NVS (ESP32 flash) so they survive both deep
+  sleep and full power-off — the compile defaults in `settings.h` only
+  apply until you make your first edit.
 - **Configurable night mode.** Default 22:00 → 05:00 the watchface ticks
   every 5 minutes instead of every minute. Configurable per-watchface in
   `settings.h` (`NIGHT_MODE_MINUTES` / `NIGHT_MODE_START` / `NIGHT_MODE_END`),
@@ -139,6 +150,32 @@ GMT offset stay out of git history. The committed `settings.example.h`
 templates only carry placeholders.
 
 ## Using the watch
+
+### Menu structure
+
+The main menu has 5 entries — scroll with UP/DOWN, select with MENU,
+exit to the watchface with BACK.
+
+```
+About Watchy        — board info and battery voltage
+Vibrate Motor       — buzz test
+Show Accelerometer  — live X/Y/Z + step counter
+Setup WiFi          — opens the WPA2 setup AP (see "First-time WiFi setup")
+Settings            — opens the settings submenu
+```
+
+The Settings submenu contains:
+
+```
+Set Time            — manual time entry, blink-edit pattern
+Sync NTP            — one-shot NTP refresh over the current WiFi
+Night Mode          — edit the quiet-hours interval and window
+```
+
+In the *Night Mode* editor, MENU moves to the next field (Interval →
+Start → End → save & exit), BACK moves to the previous field, UP/DOWN
+adjust the currently blinking value. Settings are written to NVS as soon
+as you exit the editor.
 
 ### First-time WiFi setup
 

@@ -102,12 +102,21 @@
 #define WIFI_AP_PASSWORD "watchysetup"
 #endif
 // menu
-#define WATCHFACE_STATE -1
-#define MAIN_MENU_STATE 0
-#define APP_STATE       1
-#define FW_UPDATE_STATE 2
-#define MENU_HEIGHT     25
-#define MENU_LENGTH     6
+#define WATCHFACE_STATE       -1
+#define MAIN_MENU_STATE        0
+#define APP_STATE              1
+#define FW_UPDATE_STATE        2
+#define SETTINGS_MENU_STATE    3
+#define MENU_HEIGHT            25
+// Top-level menu items: About, Vibrate Motor, Accelerometer, Setup WiFi, Settings
+#define MENU_LENGTH            5
+// Settings submenu items: Set Time, Sync NTP, Night Mode
+#define SETTINGS_MENU_LENGTH   3
+// Night-mode edit fields
+#define NIGHT_FIELD_INTERVAL   0
+#define NIGHT_FIELD_START      1
+#define NIGHT_FIELD_END        2
+#define NIGHT_FIELD_COUNT      3
 // set time
 #define SET_HOUR   0
 #define SET_MINUTE 1

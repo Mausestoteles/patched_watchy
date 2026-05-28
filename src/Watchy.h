@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <NTPClient.h>
+#include <Preferences.h>
 #include <WiFiUdp.h>
 #include <Arduino_JSON.h>
 #include <GxEPD2_BW.h>
@@ -95,6 +96,9 @@ public:
   virtual void handleButtonPress();
   void showMenu(byte menuIndex, bool partialRefresh);
   void showFastMenu(byte menuIndex);
+  void showSettings(byte settingsIndex, bool partialRefresh);
+  void showFastSettings(byte settingsIndex);
+  void showSetNightMode();
   void showAbout();
   void showBuzz();
   void showAccelerometer();
@@ -117,6 +121,9 @@ public:
 
 private:
   void _bmaConfig();
+  void _loadPersistedSettings();
+  void _savePersistedSettings();
+  void _returnToPreviousMenu();
   static void _configModeCallback(WiFiManager *myWiFiManager);
   static uint16_t _readRegister(uint8_t address, uint8_t reg, uint8_t *data,
                                 uint16_t len);
@@ -128,6 +135,8 @@ private:
 
 extern RTC_DATA_ATTR int guiState;
 extern RTC_DATA_ATTR int menuIndex;
+extern RTC_DATA_ATTR int settingsMenuIndex;
+extern RTC_DATA_ATTR int parentMenuState;
 extern RTC_DATA_ATTR BMA423 sensor;
 extern RTC_DATA_ATTR bool WIFI_CONFIGURED;
 extern RTC_DATA_ATTR bool BLE_CONFIGURED;

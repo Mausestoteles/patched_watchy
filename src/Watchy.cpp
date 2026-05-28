@@ -71,6 +71,11 @@ GxEPD2_BW<WatchyDisplay, WatchyDisplay::HEIGHT> Watchy::display(
 
 RTC_DATA_ATTR int guiState;
 RTC_DATA_ATTR int menuIndex;
+RTC_DATA_ATTR int settingsMenuIndex = 0;
+// Tracks where to return after a leaf settings function (setTime, syncNTP,
+// showSetNightMode) completes. Anything other than SETTINGS_MENU_STATE
+// returns to the main menu — see _returnToPreviousMenu().
+RTC_DATA_ATTR int parentMenuState = MAIN_MENU_STATE;
 RTC_DATA_ATTR BMA423 sensor;
 RTC_DATA_ATTR bool WIFI_CONFIGURED;
 RTC_DATA_ATTR bool BLE_CONFIGURED;
@@ -107,6 +112,11 @@ void Watchy::init(String datetime) {
   #endif
   RTC.init();
 
+  // Pull any user-edited overrides for the night-mode fields from NVS so the
+  // settings struct (which the user-supplied compile defaults populated) is
+  // up to date before anything reads it.
+  _loadPersistedSettings();
+
   // Skip the ~50 ms panel init for wake cycles that never touch the display:
   // a menu auto-close ticker (one timer wake before returning to the
   // watchface), USB plug/unplug while not on the watchface, and night-mode
@@ -133,8 +143,10 @@ void Watchy::init(String datetime) {
       settings.nightModeMinutes > 0 &&
       isNightHour(currentTime.Hour, settings.nightModeStart, settings.nightModeEnd) &&
       (currentTime.Minute % settings.nightModeMinutes) != 0;
+  const bool inAnyMenu =
+      (guiState == MAIN_MENU_STATE) || (guiState == SETTINGS_MENU_STATE);
   const bool skipDisplay =
-      (isTimerWake && guiState == MAIN_MENU_STATE && !alreadyInMenu) ||
+      (isTimerWake && inAnyMenu && !alreadyInMenu) ||
       (isUsbWake && guiState != WATCHFACE_STATE) ||
       nightSkip;
   if (!skipDisplay) {
@@ -162,7 +174,8 @@ void Watchy::init(String datetime) {
       }
       break;
     case MAIN_MENU_STATE:
-      // Return to watchface if in menu for more than one tick
+    case SETTINGS_MENU_STATE:
+      // Return to watchface if in either menu state for more than one tick
       if (alreadyInMenu) {
         guiState = WATCHFACE_STATE;
         showWatchFace(false);
@@ -273,83 +286,89 @@ void Watchy::deepSleep() {
   esp_deep_sleep_start();
 }
 
+// Dispatch a selection from the top-level menu. Returns to the watchface if
+// the selected leaf doesn't take over the state on its own.
+static inline void _dispatchMainMenu(Watchy *w, int idx) {
+  switch (idx) {
+  case 0: w->showAbout();         break;
+  case 1: w->showBuzz();          break;
+  case 2: w->showAccelerometer(); break;
+  case 3: w->setupWifi();         break;
+  case 4: w->showSettings(settingsMenuIndex, false); break;
+  default: break;
+  }
+}
+
+// Dispatch a selection from the settings submenu. Each leaf returns to the
+// settings submenu via _returnToPreviousMenu() because parentMenuState is
+// set to SETTINGS_MENU_STATE before the call.
+static inline void _dispatchSettingsMenu(Watchy *w, int idx) {
+  parentMenuState = SETTINGS_MENU_STATE;
+  switch (idx) {
+  case 0: w->setTime();          break;
+  case 1: w->showSyncNTP();      break;
+  case 2: w->showSetNightMode(); break;
+  default: break;
+  }
+}
+
 void Watchy::handleButtonPress() {
   uint64_t wakeupBit = esp_sleep_get_ext1_wakeup_status();
   // Menu Button
   if (wakeupBit & MENU_BTN_MASK) {
-    if (guiState ==
-        WATCHFACE_STATE) { // enter menu state if coming from watch face
+    if (guiState == WATCHFACE_STATE) { // enter menu state from watchface
       showMenu(menuIndex, false);
-    } else if (guiState ==
-               MAIN_MENU_STATE) { // if already in menu, then select menu item
-      switch (menuIndex) {
-      case 0:
-        showAbout();
-        break;
-      case 1:
-        showBuzz();
-        break;
-      case 2:
-        showAccelerometer();
-        break;
-      case 3:
-        setTime();
-        break;
-      case 4:
-        setupWifi();
-        break;
-      /*case 5:
-        showUpdateFW();
-        break;*/
-      case 5:
-        showSyncNTP();
-        break;
-      default:
-        break;
-      }
-    } /*else if (guiState == FW_UPDATE_STATE) {
-      updateFWBegin();
-    }*/
+    } else if (guiState == MAIN_MENU_STATE) {
+      _dispatchMainMenu(this, menuIndex);
+    } else if (guiState == SETTINGS_MENU_STATE) {
+      _dispatchSettingsMenu(this, settingsMenuIndex);
+    }
   }
   // Back Button
   else if (wakeupBit & BACK_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // exit to watch face if already in menu
+    if (guiState == MAIN_MENU_STATE) { // exit to watch face
       RTC.read(currentTime);
       showWatchFace(false);
+    } else if (guiState == SETTINGS_MENU_STATE) { // back to main menu
+      showMenu(menuIndex, false);
     } else if (guiState == APP_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      showMenu(menuIndex, false);
     } else if (guiState == FW_UPDATE_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      showMenu(menuIndex, false);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
   }
   // Up Button
   else if (wakeupBit & UP_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // increment menu index
+    if (guiState == MAIN_MENU_STATE) {
       menuIndex--;
-      if (menuIndex < 0) {
-        menuIndex = MENU_LENGTH - 1;
-      }
+      if (menuIndex < 0) menuIndex = MENU_LENGTH - 1;
       showMenu(menuIndex, true);
+    } else if (guiState == SETTINGS_MENU_STATE) {
+      settingsMenuIndex--;
+      if (settingsMenuIndex < 0) settingsMenuIndex = SETTINGS_MENU_LENGTH - 1;
+      showSettings(settingsMenuIndex, true);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
   }
   // Down Button
   else if (wakeupBit & DOWN_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // decrement menu index
+    if (guiState == MAIN_MENU_STATE) {
       menuIndex++;
-      if (menuIndex > MENU_LENGTH - 1) {
-        menuIndex = 0;
-      }
+      if (menuIndex > MENU_LENGTH - 1) menuIndex = 0;
       showMenu(menuIndex, true);
+    } else if (guiState == SETTINGS_MENU_STATE) {
+      settingsMenuIndex++;
+      if (settingsMenuIndex > SETTINGS_MENU_LENGTH - 1) settingsMenuIndex = 0;
+      showSettings(settingsMenuIndex, true);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
   }
 
-  /***************** fast menu *****************/
+  /***************** fast menu — 5 s of polled button input ****************/
   bool timeout     = false;
   long lastTimeout = millis();
   pinMode(MENU_BTN_PIN, INPUT);
@@ -359,69 +378,49 @@ void Watchy::handleButtonPress() {
   while (!timeout) {
     if (millis() - lastTimeout > 5000) {
       timeout = true;
-    } else {
-      if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
-        lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // if already in menu, then select menu item
-          switch (menuIndex) {
-          case 0:
-            showAbout();
-            break;
-          case 1:
-            showBuzz();
-            break;
-          case 2:
-            showAccelerometer();
-            break;
-          case 3:
-            setTime();
-            break;
-          case 4:
-            setupWifi();
-            break;
-          /*case 5:
-            showUpdateFW();
-            break;*/
-          case 5:
-            showSyncNTP();
-            break;
-          default:
-            break;
-          }
-        }/* else if (guiState == FW_UPDATE_STATE) {
-          updateFWBegin();
-        }*/
-      } else if (digitalRead(BACK_BTN_PIN) == ACTIVE_LOW) {
-        lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // exit to watch face if already in menu
-          RTC.read(currentTime);
-          showWatchFace(false);
-          break; // leave loop
-        } else if (guiState == APP_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
-        } else if (guiState == FW_UPDATE_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
-        }
-      } else if (digitalRead(UP_BTN_PIN) == ACTIVE_LOW) {
-        lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // increment menu index
-          menuIndex--;
-          if (menuIndex < 0) {
-            menuIndex = MENU_LENGTH - 1;
-          }
-          showFastMenu(menuIndex);
-        }
-      } else if (digitalRead(DOWN_BTN_PIN) == ACTIVE_LOW) {
-        lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // decrement menu index
-          menuIndex++;
-          if (menuIndex > MENU_LENGTH - 1) {
-            menuIndex = 0;
-          }
-          showFastMenu(menuIndex);
-        }
+      continue;
+    }
+    if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
+      lastTimeout = millis();
+      if (guiState == MAIN_MENU_STATE) {
+        _dispatchMainMenu(this, menuIndex);
+      } else if (guiState == SETTINGS_MENU_STATE) {
+        _dispatchSettingsMenu(this, settingsMenuIndex);
+      }
+    } else if (digitalRead(BACK_BTN_PIN) == ACTIVE_LOW) {
+      lastTimeout = millis();
+      if (guiState == MAIN_MENU_STATE) {
+        RTC.read(currentTime);
+        showWatchFace(false);
+        break; // leave loop
+      } else if (guiState == SETTINGS_MENU_STATE) {
+        showMenu(menuIndex, false);
+      } else if (guiState == APP_STATE) {
+        showMenu(menuIndex, false);
+      } else if (guiState == FW_UPDATE_STATE) {
+        showMenu(menuIndex, false);
+      }
+    } else if (digitalRead(UP_BTN_PIN) == ACTIVE_LOW) {
+      lastTimeout = millis();
+      if (guiState == MAIN_MENU_STATE) {
+        menuIndex--;
+        if (menuIndex < 0) menuIndex = MENU_LENGTH - 1;
+        showFastMenu(menuIndex);
+      } else if (guiState == SETTINGS_MENU_STATE) {
+        settingsMenuIndex--;
+        if (settingsMenuIndex < 0) settingsMenuIndex = SETTINGS_MENU_LENGTH - 1;
+        showFastSettings(settingsMenuIndex);
+      }
+    } else if (digitalRead(DOWN_BTN_PIN) == ACTIVE_LOW) {
+      lastTimeout = millis();
+      if (guiState == MAIN_MENU_STATE) {
+        menuIndex++;
+        if (menuIndex > MENU_LENGTH - 1) menuIndex = 0;
+        showFastMenu(menuIndex);
+      } else if (guiState == SETTINGS_MENU_STATE) {
+        settingsMenuIndex++;
+        if (settingsMenuIndex > SETTINGS_MENU_LENGTH - 1) settingsMenuIndex = 0;
+        showFastSettings(settingsMenuIndex);
       }
     }
   }
@@ -438,8 +437,7 @@ void Watchy::showMenu(byte menuIndex, bool partialRefresh) {
 
   const char *menuItems[] = {
       "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
+      "Setup WiFi",   "Settings"};
   for (int i = 0; i < MENU_LENGTH; i++) {
     yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
     display.setCursor(0, yPos);
@@ -471,8 +469,7 @@ void Watchy::showFastMenu(byte menuIndex) {
 
   const char *menuItems[] = {
       "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
+      "Setup WiFi",   "Settings"};
   for (int i = 0; i < MENU_LENGTH; i++) {
     yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
     display.setCursor(0, yPos);
@@ -728,7 +725,7 @@ void Watchy::setTime() {
 
   RTC.set(tm);
 
-  showMenu(menuIndex, false);
+  _returnToPreviousMenu();
 }
 
 void Watchy::showAccelerometer() {
@@ -1346,7 +1343,7 @@ void Watchy::showSyncNTP() {
   }
   display.display(true); // full refresh
   delay(3000);
-  showMenu(menuIndex, false);
+  _returnToPreviousMenu();
 }
 
 bool Watchy::syncNTP() { // NTP sync - call after connecting to WiFi and
@@ -1372,4 +1369,233 @@ bool Watchy::syncNTP(long gmt, String ntpServer) {
   breakTime((time_t)timeClient.getEpochTime(), tm);
   RTC.set(tm);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Settings submenu, night-mode editor, NVS persistence
+// ---------------------------------------------------------------------------
+
+// Returns the user to the menu state that dispatched the current leaf
+// function. Set parentMenuState before calling any leaf used from multiple
+// menus (e.g. setTime / showSyncNTP); the default of MAIN_MENU_STATE keeps
+// behaviour identical for leaves only ever reached from the main menu.
+void Watchy::_returnToPreviousMenu() {
+  if (parentMenuState == SETTINGS_MENU_STATE) {
+    showSettings(settingsMenuIndex, false);
+  } else {
+    showMenu(menuIndex, false);
+  }
+}
+
+// NVS namespace used by all persisted Watchy settings.
+#define WATCHY_PREFS_NAMESPACE "watchy"
+
+void Watchy::_loadPersistedSettings() {
+  Preferences prefs;
+  // Read-only open. Returns false if the namespace hasn't been created yet
+  // (first boot after flashing): silently fall back to compile defaults.
+  if (!prefs.begin(WATCHY_PREFS_NAMESPACE, true)) {
+    return;
+  }
+  if (prefs.isKey("nightMin")) {
+    settings.nightModeMinutes = prefs.getUChar("nightMin", settings.nightModeMinutes);
+  }
+  if (prefs.isKey("nightStart")) {
+    settings.nightModeStart = prefs.getUChar("nightStart", settings.nightModeStart);
+  }
+  if (prefs.isKey("nightEnd")) {
+    settings.nightModeEnd = prefs.getUChar("nightEnd", settings.nightModeEnd);
+  }
+  prefs.end();
+}
+
+void Watchy::_savePersistedSettings() {
+  Preferences prefs;
+  if (!prefs.begin(WATCHY_PREFS_NAMESPACE, false)) {
+    return;
+  }
+  prefs.putUChar("nightMin",   settings.nightModeMinutes);
+  prefs.putUChar("nightStart", settings.nightModeStart);
+  prefs.putUChar("nightEnd",   settings.nightModeEnd);
+  prefs.end();
+}
+
+void Watchy::showSettings(byte settingsIndex, bool partialRefresh) {
+  display.setFullWindow();
+  display.fillScreen(GxEPD_BLACK);
+  display.setFont(&FreeMonoBold9pt7b);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  int16_t yPos;
+
+  const char *items[] = {"Set Time", "Sync NTP", "Night Mode"};
+  for (int i = 0; i < SETTINGS_MENU_LENGTH; i++) {
+    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
+    display.setCursor(0, yPos);
+    if (i == settingsIndex) {
+      display.getTextBounds(items[i], 0, yPos, &x1, &y1, &w, &h);
+      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
+      display.setTextColor(GxEPD_BLACK);
+      display.println(items[i]);
+    } else {
+      display.setTextColor(GxEPD_WHITE);
+      display.println(items[i]);
+    }
+  }
+
+  display.display(partialRefresh);
+
+  guiState      = SETTINGS_MENU_STATE;
+  alreadyInMenu = false;
+}
+
+void Watchy::showFastSettings(byte settingsIndex) {
+  display.setFullWindow();
+  display.fillScreen(GxEPD_BLACK);
+  display.setFont(&FreeMonoBold9pt7b);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  int16_t yPos;
+
+  const char *items[] = {"Set Time", "Sync NTP", "Night Mode"};
+  for (int i = 0; i < SETTINGS_MENU_LENGTH; i++) {
+    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
+    display.setCursor(0, yPos);
+    if (i == settingsIndex) {
+      display.getTextBounds(items[i], 0, yPos, &x1, &y1, &w, &h);
+      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
+      display.setTextColor(GxEPD_BLACK);
+      display.println(items[i]);
+    } else {
+      display.setTextColor(GxEPD_WHITE);
+      display.println(items[i]);
+    }
+  }
+
+  display.display(true);
+
+  guiState = SETTINGS_MENU_STATE;
+}
+
+void Watchy::showSetNightMode() {
+  guiState = APP_STATE;
+
+  // Pull current values into locals so the user can cancel by power-cycling
+  // before the final commit below.
+  uint8_t interval = settings.nightModeMinutes;
+  uint8_t startHr  = settings.nightModeStart;
+  uint8_t endHr    = settings.nightModeEnd;
+
+  uint8_t setIndex = NIGHT_FIELD_INTERVAL;
+  int8_t  blink    = 0;
+
+  pinMode(DOWN_BTN_PIN, INPUT);
+  pinMode(UP_BTN_PIN, INPUT);
+  pinMode(MENU_BTN_PIN, INPUT);
+  pinMode(BACK_BTN_PIN, INPUT);
+
+  display.setFullWindow();
+
+  while (1) {
+    if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
+      setIndex++;
+      if (setIndex >= NIGHT_FIELD_COUNT) break; // commit + exit
+    }
+    if (digitalRead(BACK_BTN_PIN) == ACTIVE_LOW) {
+      if (setIndex > NIGHT_FIELD_INTERVAL) {
+        setIndex--;
+      }
+    }
+
+    blink = 1 - blink;
+
+    if (digitalRead(DOWN_BTN_PIN) == ACTIVE_LOW) {
+      blink = 1;
+      switch (setIndex) {
+      case NIGHT_FIELD_INTERVAL:
+        interval == 30 ? (interval = 0) : interval++;
+        break;
+      case NIGHT_FIELD_START:
+        startHr == 23 ? (startHr = 0) : startHr++;
+        break;
+      case NIGHT_FIELD_END:
+        endHr == 23 ? (endHr = 0) : endHr++;
+        break;
+      }
+    }
+
+    if (digitalRead(UP_BTN_PIN) == ACTIVE_LOW) {
+      blink = 1;
+      switch (setIndex) {
+      case NIGHT_FIELD_INTERVAL:
+        interval == 0 ? (interval = 30) : interval--;
+        break;
+      case NIGHT_FIELD_START:
+        startHr == 0 ? (startHr = 23) : startHr--;
+        break;
+      case NIGHT_FIELD_END:
+        endHr == 0 ? (endHr = 23) : endHr--;
+        break;
+      }
+    }
+
+    display.fillScreen(GxEPD_BLACK);
+    display.setTextColor(GxEPD_WHITE);
+    display.setFont(&FreeMonoBold9pt7b);
+
+    display.setCursor(5, 22);
+    display.println("Night Mode");
+
+    display.setCursor(5, 62);
+    display.print("Interval:");
+    display.setCursor(120, 62);
+    if (setIndex == NIGHT_FIELD_INTERVAL) {
+      display.setTextColor(blink ? GxEPD_WHITE : GxEPD_BLACK);
+    }
+    if (interval == 0) {
+      display.print("OFF");
+    } else {
+      display.print(interval);
+      display.print(" min");
+    }
+    display.setTextColor(GxEPD_WHITE);
+
+    display.setCursor(5, 102);
+    display.print("Start:");
+    display.setCursor(120, 102);
+    if (setIndex == NIGHT_FIELD_START) {
+      display.setTextColor(blink ? GxEPD_WHITE : GxEPD_BLACK);
+    }
+    if (startHr < 10) display.print("0");
+    display.print(startHr);
+    display.print(":00");
+    display.setTextColor(GxEPD_WHITE);
+
+    display.setCursor(5, 142);
+    display.print("End:");
+    display.setCursor(120, 142);
+    if (setIndex == NIGHT_FIELD_END) {
+      display.setTextColor(blink ? GxEPD_WHITE : GxEPD_BLACK);
+    }
+    if (endHr < 10) display.print("0");
+    display.print(endHr);
+    display.print(":00");
+    display.setTextColor(GxEPD_WHITE);
+
+    display.setCursor(5, 178);
+    display.println("MENU=next");
+    display.setCursor(5, 195);
+    display.println("BACK=prev UP/DN=val");
+
+    display.display(true); // partial refresh
+  }
+
+  settings.nightModeMinutes = interval;
+  settings.nightModeStart   = startHr;
+  settings.nightModeEnd     = endHr;
+  _savePersistedSettings();
+
+  _returnToPreviousMenu();
 }
