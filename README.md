@@ -10,6 +10,10 @@ tree and example watchfaces.
 
 The most recent additions on top of the security, privacy and UX patches:
 
+- **Configurable night mode.** Default 22:00 → 05:00 the watchface ticks
+  every 5 minutes instead of every minute. Configurable per-watchface in
+  `settings.h` (`NIGHT_MODE_MINUTES` / `NIGHT_MODE_START` / `NIGHT_MODE_END`),
+  set `NIGHT_MODE_MINUTES = 0` to disable.
 - **Weather request retries with backoff.** `_getWeatherData` retries
   transient failures up to three times (500 ms / 1000 ms linear backoff),
   bails immediately on 4xx so the radio doesn't drain. One dropped packet
@@ -75,6 +79,21 @@ Full details for each item are in [What's patched](#whats-patched) below.
   V1/V2 path), with an explicit ignore-mask for wakeup sources, board
   peripherals and the S3 strapping pins. Measurable battery-life
   improvement on V3 boards.
+- **Night mode for the watchface.** Between `NIGHT_MODE_START` (default 22)
+  and `NIGHT_MODE_END` (default 5) the watchface refreshes every
+  `NIGHT_MODE_MINUTES` minutes (default 5) instead of every minute.
+  - On V3 the deep-sleep timer is extended directly, so the CPU + radio +
+    panel stay off for the whole interval — biggest per-tick saving.
+  - On V1/V2 the hardware RTC alarm still fires every minute, but
+    `init()` returns early without initialising the display or running
+    `showWatchFace()` on in-between minutes — still skips the expensive
+    panel refresh.
+  - Set `NIGHT_MODE_MINUTES = 0` in `settings.h` to disable. The window
+    wraps over midnight when `START > END`.
+  - Hourly chime (`vibrateOClock`) still triggers at the top of the hour
+    because minute=0 is always a refresh minute for any interval that
+    divides 60. Set `vibrateOClock = false` if you also want a silent
+    night.
 
 ### UX
 

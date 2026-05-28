@@ -64,6 +64,13 @@ typedef struct watchySettings {
   int gmtOffset;
   //
   bool vibrateOClock;
+  // Night mode: reduce display ticks during quiet hours to save battery.
+  // Set nightModeMinutes to 0 to disable (default behavior, tick every
+  // minute). Hours are 0-23. If start > end, the window wraps over midnight
+  // (e.g. start=22 end=5 covers 22:00 through 04:59).
+  uint8_t nightModeMinutes;
+  uint8_t nightModeStart;
+  uint8_t nightModeEnd;
 } watchySettings;
 
 class Watchy {

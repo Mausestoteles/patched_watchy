@@ -50,6 +50,15 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 // wake cycle, so deepSleep() only hibernates a panel that was brought up.
 static bool s_displayInitedThisCycle = false;
 
+// Returns true if `hour` falls inside [start, end) on a 24-hour clock,
+// handling the case where the window wraps over midnight (start > end).
+// Returns false when start == end (degenerate empty window).
+static inline bool isNightHour(uint8_t hour, uint8_t start, uint8_t end) {
+  if (start == end) return false;
+  if (start < end)  return hour >= start && hour < end;
+  return hour >= start || hour < end;
+}
+
 #ifdef ARDUINO_ESP32S3_DEV
   Watchy32KRTC Watchy::RTC;
   #define ACTIVE_LOW 0
@@ -100,7 +109,8 @@ void Watchy::init(String datetime) {
 
   // Skip the ~50 ms panel init for wake cycles that never touch the display:
   // a menu auto-close ticker (one timer wake before returning to the
-  // watchface) and USB plug/unplug while not on the watchface.
+  // watchface), USB plug/unplug while not on the watchface, and night-mode
+  // minutes where we don't refresh the panel.
   s_displayInitedThisCycle = false;
   #ifdef ARDUINO_ESP32S3_DEV
   const bool isTimerWake = (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER);
@@ -109,9 +119,24 @@ void Watchy::init(String datetime) {
   const bool isTimerWake = (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0);
   const bool isUsbWake   = false;
   #endif
+  // Read RTC up front for timer/USB wakes — needed both by the night-mode
+  // check below and by the wakeup case handlers, so we centralise the read.
+  if (isTimerWake || isUsbWake) {
+    RTC.read(currentTime);
+  }
+  // Night mode: during the configured quiet hours, only refresh on every
+  // Nth minute. On V3 deepSleep() also extends the timer to skip the
+  // in-between wakes entirely; on V1/V2 the hardware RTC alarm still fires
+  // every minute but we exit early without touching the panel.
+  const bool nightSkip =
+      isTimerWake && guiState == WATCHFACE_STATE &&
+      settings.nightModeMinutes > 0 &&
+      isNightHour(currentTime.Hour, settings.nightModeStart, settings.nightModeEnd) &&
+      (currentTime.Minute % settings.nightModeMinutes) != 0;
   const bool skipDisplay =
       (isTimerWake && guiState == MAIN_MENU_STATE && !alreadyInMenu) ||
-      (isUsbWake && guiState != WATCHFACE_STATE);
+      (isUsbWake && guiState != WATCHFACE_STATE) ||
+      nightSkip;
   if (!skipDisplay) {
     display.epd2.initWatchy();
     s_displayInitedThisCycle = true;
@@ -123,10 +148,12 @@ void Watchy::init(String datetime) {
   #else
   case ESP_SLEEP_WAKEUP_EXT0: // RTC Alarm
   #endif
-    RTC.read(currentTime);
+    // currentTime was already read above so we can decide night-mode skip.
     switch (guiState) {
     case WATCHFACE_STATE:
-      showWatchFace(true); // partial updates on tick
+      if (!nightSkip) {
+        showWatchFace(true); // partial updates on tick
+      }
       if (settings.vibrateOClock) {
         if (currentTime.Minute == 0) {
           // The RTC wakes us up once per minute
@@ -153,7 +180,7 @@ void Watchy::init(String datetime) {
     pinMode(USB_DET_PIN, INPUT);
     USB_PLUGGED_IN = (digitalRead(USB_DET_PIN) == 1);
     if(guiState == WATCHFACE_STATE){
-      RTC.read(currentTime);
+      // currentTime was already read above
       showWatchFace(true);
     }
     break;
@@ -217,8 +244,18 @@ void Watchy::deepSleep() {
   //rtc_clk_slow_freq_set(RTC_SLOW_FREQ_32K_XTAL);
   struct tm timeinfo;
   getLocalTime(&timeinfo);
-  int secToNextMin = 60 - timeinfo.tm_sec;
-  esp_sleep_enable_timer_wakeup(secToNextMin * uS_TO_S_FACTOR);
+  // Default: wake at the next minute boundary so the displayed time stays
+  // accurate. During the configured night-mode window we wake at the next
+  // nightModeMinutes boundary instead, skipping all in-between ticks
+  // entirely (CPU + radio + panel) rather than just skipping the refresh.
+  int secToNextWake = 60 - timeinfo.tm_sec;
+  const uint8_t nightInt = settings.nightModeMinutes;
+  if (nightInt > 0 &&
+      isNightHour(timeinfo.tm_hour, settings.nightModeStart, settings.nightModeEnd)) {
+    const int minsToNext = nightInt - (timeinfo.tm_min % nightInt);
+    secToNextWake        = minsToNext * 60 - timeinfo.tm_sec;
+  }
+  esp_sleep_enable_timer_wakeup((uint64_t)secToNextWake * uS_TO_S_FACTOR);
   #else
   // Set GPIOs 0-39 to input to avoid power leaking out
   const uint64_t ignore = 0b11110001000000110000100111000010; // Ignore some GPIOs due to resets
