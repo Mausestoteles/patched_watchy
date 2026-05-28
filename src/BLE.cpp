@@ -1,5 +1,3 @@
-#include "BLE.h"
-
 // ============================================================================
 // SECURITY WARNING — UNAUTHENTICATED BLE OTA
 // ----------------------------------------------------------------------------
@@ -9,12 +7,20 @@
 // so a hostile peer can mark a partial upload as final and have it set as the
 // boot partition.
 //
-// The OTA menu entry that invokes updateFWBegin() is currently commented out
-// in Watchy.cpp on purpose. Do NOT re-enable it without first adding:
+// The implementation below compiles only when WATCHY_ENABLE_BLE_OTA is
+// defined (see config.h). It is gated behind this flag specifically so the
+// vulnerable code is not linked into a default build. Do NOT define the flag
+// without first adding:
 //   * BLE pairing with MITM protection / numeric comparison, AND
 //   * verified image signing (ESP32 Secure Boot v2 + signed esp_image), AND
 //   * a hard maximum image size and explicit end-of-stream marker.
 // ============================================================================
+
+#include "config.h"
+
+#ifdef WATCHY_ENABLE_BLE_OTA
+
+#include "BLE.h"
 
 #define SERVICE_UUID_ESPOTA    "cd77498e-1ac8-48b6-aba8-4161c7342fce"
 #define CHARACTERISTIC_UUID_ID "cd77498f-1ac8-48b6-aba8-4161c7342fce"
@@ -144,3 +150,5 @@ bool BLE::begin(const char *localName = "Watchy BLE OTA") {
 int BLE::updateStatus() { return status; }
 
 int BLE::howManyBytes() { return bytesReceived; }
+
+#endif // WATCHY_ENABLE_BLE_OTA

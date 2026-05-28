@@ -13,9 +13,11 @@
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include "DSEG7_Classic_Bold_53.h"
 #include "Display.h"
-#include "BLE.h"
-#include "bma.h"
 #include "config.h"
+#include "bma.h"
+#ifdef WATCHY_ENABLE_BLE_OTA
+#include "BLE.h"
+#endif
 #include "esp_chip_info.h"
 #include "esp_task_wdt.h"
 #ifdef ARDUINO_ESP32S3_DEV
@@ -98,7 +100,9 @@ public:
   void setupWifi();
   bool connectWiFi();
   weatherData getWeatherData();
+#ifdef WATCHY_ENABLE_BLE_OTA
   void updateFWBegin();
+#endif
 
   void showWatchFace(bool partialRefresh);
   virtual void drawWatchFace(); // override this method for different watch

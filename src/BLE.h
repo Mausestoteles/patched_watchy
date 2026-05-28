@@ -1,6 +1,10 @@
 #ifndef _BLE_H_
 #define _BLE_H_
 
+#include "config.h"
+
+#ifdef WATCHY_ENABLE_BLE_OTA
+
 #include "Arduino.h"
 
 #include <BLE2902.h>
@@ -9,8 +13,6 @@
 #include <BLEUtils.h>
 
 #include "esp_ota_ops.h"
-
-#include "config.h"
 
 class BLE;
 
@@ -36,5 +38,7 @@ private:
   BLECharacteristic *pOtaCharacteristic           = NULL;
   BLECharacteristic *pWatchFaceNameCharacteristic = NULL;
 };
+
+#endif // WATCHY_ENABLE_BLE_OTA
 
 #endif

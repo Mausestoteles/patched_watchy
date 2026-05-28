@@ -31,6 +31,10 @@
     {
       "name": "WiFiManager",
       "version": "https://github.com/tzapu/WiFiManager.git#master"
+    },
+    {
+      "name": "QRCode",
+      "version": "https://github.com/ricmoo/QRCode.git#master"
     }
   ]
 }

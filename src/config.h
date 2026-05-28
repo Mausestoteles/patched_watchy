@@ -116,6 +116,13 @@
 #define SET_DAY    4
 #define HOUR_12_24 24
 // BLE OTA
+// DANGER: the BLE OTA path is unauthenticated and accepts unsigned firmware.
+// See the warning block at the top of src/BLE.cpp for the full threat model
+// and the prerequisites that MUST be added before re-enabling it. The feature
+// is gated by WATCHY_ENABLE_BLE_OTA so the vulnerable code does not exist in
+// the binary by default. Define it via your build config (e.g.
+// -DWATCHY_ENABLE_BLE_OTA) only after the BLE pairing + image-signing fixes.
+// #define WATCHY_ENABLE_BLE_OTA
 #define BLE_DEVICE_NAME        "Watchy BLE OTA"
 #define WATCHFACE_NAME         "Watchy 7 Segment"
 #define SOFTWARE_VERSION_MAJOR 1

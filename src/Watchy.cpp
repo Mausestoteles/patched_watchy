@@ -1,5 +1,15 @@
 #include "Watchy.h"
 
+// Optional QR-code support for the setup screen. If the user has the
+// ricmoo/qrcode library on their include path we render a scannable WIFI:
+// URI; otherwise we silently fall back to a text-only credential dump.
+#if __has_include(<qrcode.h>)
+  #include <qrcode.h>
+  #define WATCHY_HAS_QRCODE 1
+#else
+  #define WATCHY_HAS_QRCODE 0
+#endif
+
 // ISRG Root X1 (Let's Encrypt) — valid until 2035-06-04.
 // Used to validate HTTPS endpoints such as api.openweathermap.org.
 // If your weather endpoint uses a different CA, replace this constant.
@@ -1043,6 +1053,41 @@ void Watchy::_configModeCallback(WiFiManager *myWiFiManager) {
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
   display.setTextColor(GxEPD_WHITE);
+
+#if WATCHY_HAS_QRCODE
+  // WIFI: URI per the WPA join format — modern iOS/Android cameras connect
+  // directly when this is scanned. The WPA grammar uses backslash to escape
+  // the special chars ; , : " — keep WIFI_AP_PASSWORD free of those.
+  String qrText = String("WIFI:T:WPA;S:") + WIFI_AP_SSID +
+                  ";P:" + WIFI_AP_PASSWORD + ";;";
+  QRCode qrcode;
+  // Buffer for version 4 (33×33 modules): ((33*33)+7)/8 = 137 bytes.
+  // Capacity at ECC_LOW = 78 binary chars, enough for SSID + ~50-char password.
+  uint8_t qrcodeData[137];
+  qrcode_initText(&qrcode, qrcodeData, 4, ECC_LOW, qrText.c_str());
+
+  display.setCursor(0, 12);
+  display.println("Scan to join:");
+
+  const int qrPixelSize = 5;
+  const int qrPx        = qrcode.size * qrPixelSize;
+  const int qrX         = (DISPLAY_WIDTH - qrPx) / 2;
+  const int qrY         = 22;
+  for (uint8_t y = 0; y < qrcode.size; y++) {
+    for (uint8_t x = 0; x < qrcode.size; x++) {
+      if (qrcode_getModule(&qrcode, x, y)) {
+        display.fillRect(qrX + x * qrPixelSize, qrY + y * qrPixelSize,
+                         qrPixelSize, qrPixelSize, GxEPD_WHITE);
+      }
+    }
+  }
+
+  display.setCursor(0, qrY + qrPx + 14);
+  display.print("SSID: ");
+  display.println(WIFI_AP_SSID);
+  display.print("PASS: ");
+  display.println(WIFI_AP_PASSWORD);
+#else
   display.setCursor(0, 30);
   display.println("Connect to");
   display.print("SSID: ");
@@ -1051,6 +1096,8 @@ void Watchy::_configModeCallback(WiFiManager *myWiFiManager) {
   display.println(WIFI_AP_PASSWORD);
   display.print("IP: ");
   display.println(WiFi.softAPIP());
+#endif
+
   display.display(false); // full refresh
 }
 
