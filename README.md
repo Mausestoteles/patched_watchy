@@ -6,6 +6,21 @@ tree and example watchfaces.
 
 ![Watchy](https://watchy.sqfmi.com/img/watchy_render.png)
 
+## Latest patches
+
+The most recent additions on top of the security, privacy and UX patches:
+
+- **Weather request retries with backoff.** `_getWeatherData` retries
+  transient failures up to three times (500 ms / 1000 ms linear backoff),
+  bails immediately on 4xx so the radio doesn't drain. One dropped packet
+  no longer costs you a 30-minute weather gap.
+- **V3 GPIO leak prevention in `deepSleep()`.** Watchy V3 (ESP32-S3) now
+  drives every unused GPIO to high-Z input before sleeping, with an
+  explicit ignore-mask for wakeup sources, peripherals and S3 strapping
+  pins. Brings V3 sleep-current discipline in line with V1/V2.
+
+Full details for each item are in [What's patched](#whats-patched) below.
+
 ## What's patched
 
 ### Security / privacy
@@ -49,6 +64,17 @@ tree and example watchfaces.
   cycles that never touch the panel (menu auto-close ticks; USB plug/unplug
   while not on the watchface). `deepSleep()` only hibernates a panel that
   was actually brought up.
+- **Weather request retries.** `_getWeatherData` now retries transient
+  failures (connection errors, 5xx responses) up to three times with linear
+  backoff (500 ms, 1000 ms). 4xx responses (bad API key, unknown city) are
+  treated as permanent and abort the loop so the radio doesn't stay on
+  pointlessly. One dropped packet no longer means 30 minutes of stale
+  weather.
+- **V3 GPIO leak prevention.** On the ESP32-S3 Watchy V3, `deepSleep()` now
+  drives every unused GPIO to high-Z input before sleeping (matching the
+  V1/V2 path), with an explicit ignore-mask for wakeup sources, board
+  peripherals and the S3 strapping pins. Measurable battery-life
+  improvement on V3 boards.
 
 ### UX
 

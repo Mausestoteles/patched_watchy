@@ -182,6 +182,27 @@ void Watchy::deepSleep() {
   }
   RTC.clearAlarm();        // resets the alarm flag in the RTC
   #ifdef ARDUINO_ESP32S3_DEV
+  // Set unused GPIOs to high-Z input to avoid current leakage during deep
+  // sleep. The mask lists pins we must leave alone — wakeup sources, board
+  // peripherals (display, accel, vibrator, ADC), USB OTG D+/D-, and the S3
+  // strapping pins (0, 3, 45, 46).
+  const uint64_t ignore =
+      (1ULL << 0)  | (1ULL << 3)  |                              // strap pins (0 also = UP_BTN)
+      (1ULL << 6)  | (1ULL << 7)  | (1ULL << 8)  |               // BACK / MENU / DOWN buttons
+      (1ULL << 9)  | (1ULL << 10) |                              // BATT_ADC / CHRG_STATUS
+      (1ULL << 11) | (1ULL << 12) |                              // I2C SCL / SDA
+      (1ULL << 13) | (1ULL << 14) |                              // ACC INT_2 / INT_1
+      (1ULL << 17) |                                             // VIB_MOTOR
+      (1ULL << 19) | (1ULL << 20) |                              // USB D- / D+
+      (1ULL << 21) |                                             // USB_DET
+      (1ULL << 33) | (1ULL << 34) | (1ULL << 35) | (1ULL << 36) |// DISPLAY CS/DC/RES/BUSY
+      (1ULL << 45) | (1ULL << 46) |                              // strap pins
+      (1ULL << 47) | (1ULL << 48);                               // SPI SCK / MOSI
+  for (int i = 0; i < GPIO_NUM_MAX; i++) {
+    if ((ignore >> i) & 0b1) continue;
+    pinMode(i, INPUT);
+  }
+
   esp_sleep_enable_ext0_wakeup((gpio_num_t)USB_DET_PIN, USB_PLUGGED_IN ? LOW : HIGH); //// enable deep sleep wake on USB plug in/out
   rtc_gpio_set_direction((gpio_num_t)USB_DET_PIN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en((gpio_num_t)USB_DET_PIN);
@@ -785,8 +806,6 @@ weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, Strin
       updateInterval) { // only update if WEATHER_UPDATE_INTERVAL has elapsed
                         // i.e. 30 minutes
     if (connectWiFi()) {
-      HTTPClient http; // Use Weather API for live data if WiFi is connected
-      http.setConnectTimeout(3000); // 3 second max timeout
       String weatherQueryURL = url;
       if(cityID != ""){
         weatherQueryURL.replace("{cityID}", cityID);
@@ -797,18 +816,40 @@ weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, Strin
       weatherQueryURL.replace("{units}", units);
       weatherQueryURL.replace("{lang}", lang);
       weatherQueryURL.replace("{apiKey}", apiKey);
-      // Validate the TLS cert when speaking HTTPS so the API key and location
-      // are not exposed to anyone on the local network or on-path.
-      WiFiClientSecure secureClient;
-      if (weatherQueryURL.startsWith("https://")) {
-        secureClient.setCACert(WATCHY_ROOT_CA_ISRG_X1);
-        http.begin(secureClient, weatherQueryURL);
-      } else {
-        http.begin(weatherQueryURL.c_str());
+
+      // Retry transient failures (connection errors, 5xx) with linear backoff.
+      // 4xx is treated as permanent — a bad API key or unknown city won't fix
+      // itself by retrying, so we bail immediately and save the radio power.
+      const int    maxAttempts     = 3;
+      int          httpResponseCode = -1;
+      String       payload;
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        HTTPClient http;
+        http.setConnectTimeout(3000); // 3 second max timeout
+        // Validate the TLS cert when speaking HTTPS so the API key and
+        // location are not exposed to anyone on the local network or on-path.
+        WiFiClientSecure secureClient;
+        if (weatherQueryURL.startsWith("https://")) {
+          secureClient.setCACert(WATCHY_ROOT_CA_ISRG_X1);
+          http.begin(secureClient, weatherQueryURL);
+        } else {
+          http.begin(weatherQueryURL.c_str());
+        }
+        httpResponseCode = http.GET();
+        if (httpResponseCode == 200) {
+          payload = http.getString();
+        }
+        http.end();
+
+        if (httpResponseCode == 200) break;
+        const bool transient = httpResponseCode < 0 ||
+                               (httpResponseCode >= 500 && httpResponseCode < 600);
+        if (!transient || attempt == maxAttempts) break;
+        esp_task_wdt_reset();
+        delay(500 * attempt); // 500 ms, 1000 ms
       }
-      int httpResponseCode = http.GET();
+
       if (httpResponseCode == 200) {
-        String payload         = http.getString();
         JSONVar responseObject = JSON.parse(payload);
         // Only ingest the response if it parsed and carries every field we
         // read below. Without this an HTML error page or partial response
@@ -831,10 +872,7 @@ weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, Strin
           gmtOffset = int(responseObject["timezone"]);
           syncNTP(gmtOffset);
         }
-      } else {
-        // http error
       }
-      http.end();
       // turn off radios
       WiFi.mode(WIFI_OFF);
       btStop();
