@@ -592,6 +592,10 @@ void Watchy::setTime() {
   display.setFullWindow();
 
   while (1) {
+    // The editor is a polled-button loop with no esp_sleep involvement, so
+    // the task watchdog would otherwise fire after WDT_TIMEOUT_SECONDS of
+    // the user thinking about a value. Feed it once per iteration.
+    esp_task_wdt_reset();
 
     if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
       setIndex++;
@@ -744,6 +748,9 @@ void Watchy::showAccelerometer() {
   pinMode(BACK_BTN_PIN, INPUT);
 
   while (1) {
+    // Polled-button loop — feed the WDT once per iteration so leaving the
+    // accelerometer view open for >WDT_TIMEOUT_SECONDS doesn't reboot.
+    esp_task_wdt_reset();
 
     unsigned long currentMillis = millis();
 
@@ -1499,6 +1506,10 @@ void Watchy::showSetNightMode() {
   display.setFullWindow();
 
   while (1) {
+    // Polled-button loop — feed the WDT once per iteration so a user
+    // pausing on a value for >WDT_TIMEOUT_SECONDS doesn't reboot the watch.
+    esp_task_wdt_reset();
+
     if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
       setIndex++;
       if (setIndex >= NIGHT_FIELD_COUNT) break; // commit + exit
