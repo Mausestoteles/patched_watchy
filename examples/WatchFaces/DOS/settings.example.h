@@ -25,6 +25,14 @@
 #define NTP_SERVER "pool.ntp.org"
 #define GMT_OFFSET_SEC 3600 * -5 //New York is UTC -5 EST, -4 EDT, will be overwritten by weather data
 
+// Night mode: refresh the watchface every NIGHT_MODE_MINUTES instead of every
+// minute between NIGHT_MODE_START (inclusive) and NIGHT_MODE_END (exclusive).
+// Set NIGHT_MODE_MINUTES to 0 to disable. The window wraps over midnight when
+// START > END (default 22-5 covers 22:00 through 04:59).
+#define NIGHT_MODE_MINUTES 5
+#define NIGHT_MODE_START   22
+#define NIGHT_MODE_END     5
+
 watchySettings settings{
     #ifdef CITY_ID
         .cityID = CITY_ID,
@@ -41,6 +49,9 @@ watchySettings settings{
     .ntpServer = NTP_SERVER,
     .gmtOffset = GMT_OFFSET_SEC,
     .vibrateOClock = true,
+    .nightModeMinutes = NIGHT_MODE_MINUTES,
+    .nightModeStart   = NIGHT_MODE_START,
+    .nightModeEnd     = NIGHT_MODE_END,
 };
 
 #endif
